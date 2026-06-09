@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}巡检详情 #{{ run.id }} - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>巡检报告 #{{ run.id }}</h1>
+<p style="color:var(--text-muted);margin-bottom:16px">
+  {{ run.timestamp }} | {{ run.hostname }}
+  {% if run.status == 'connected' %}<span class="status-badge connected">成功</span>
+  {% else %}<span class="status-badge error">{{ run.status }}</span>{% endif %}
+</p>
+
+<div class="stat-cards" style="margin-bottom:20px">
+  <div class="stat-card info">
+    <div class="stat-value">{{ run.cpu }}</div>
+    <div class="stat-label">CPU 使用率</div>
+  </div>
+  <div class="stat-card {{ 'err' if run.memory|replace('%','')|float > 80 else 'ok' }}">
+    <div class="stat-value">{{ run.memory }}</div>
+    <div class="stat-label">内存使用率</div>
+  </div>
+  <div class="stat-card info">
+    <div class="stat-value" style="font-size:1.1rem">{{ run.uptime }}</div>
+    <div class="stat-label">运行时间</div>
+  </div>
+</div>
+
+{% if run.error %}
+<div class="alert alert-error"><strong>错误:</strong> {{ run.error }}</div>
+{% endif %}
+
+{% for category, cmds in sections.items() %}
+<div class="card" style="margin-bottom:12px">
+  <details open>
+    <summary style="font-size:1rem;font-family:var(--font-mono)">{{ category }}</summary>
+    <div style="margin-top:12px">
+    {% for desc, out in cmds.items() %}
+      <p style="color:var(--text-muted);font-size:0.8rem;margin:8px 0 4px">{{ desc }}</p>
+      <pre style="max-height:400px;overflow-y:auto;white-space:pre-wrap;font-size:0.78rem">{{ out }}</pre>
+    {% endfor %}
+    </div>
+  </details>
+</div>
+{% endfor %}
+
+<a href="/reports" class="btn btn-ghost">← 返回列表</a>
+<a href="/reports/{{ run.id }}/export" class="btn btn-primary">导出 HTML</a>
+
+{% endblock %}

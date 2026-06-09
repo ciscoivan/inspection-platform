@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}子网计算 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>子网计算</h1>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <form method="post" action="/subnet" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="text" name="ipv4_addr" placeholder="IPv4 地址/网段" value="{{ ipv4_input or '' }}" style="font-family:var(--font-mono);width:220px">
+    <input type="text" name="ipv6_addr" placeholder="IPv6 地址/网段" value="{{ ipv6_input or '' }}" style="font-family:var(--font-mono);width:280px">
+    <select name="subnet_action">
+      <option value="calc">子网信息</option>
+      <option value="split">子网划分</option>
+      <option value="list">子网列举</option>
+    </select>
+    <input type="text" name="new_prefix" placeholder="新前缀" style="width:80px;font-family:var(--font-mono)">
+    <input type="text" name="list_count" placeholder="数量" value="20" style="width:70px;font-family:var(--font-mono)">
+    <button type="submit" class="btn btn-primary">计算</button>
+  </form>
+</div>
+
+{% if ipv4 %}
+<div class="card" style="margin-bottom:16px">
+  <h3>IPv4: {{ ipv4.cidr }}</h3>
+  <div class="stat-cards" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.1rem">{{ ipv4.network }}</div><div class="stat-label">网络地址</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.1rem">{{ ipv4.netmask }}</div><div class="stat-label">子网掩码</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.1rem">{{ ipv4.wildcard }}</div><div class="stat-label">通配符掩码</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.1rem">{{ ipv4.broadcast }}</div><div class="stat-label">广播地址</div></div>
+    <div class="stat-card ok"><div class="stat-value" style="font-size:1.1rem">{{ ipv4.first_host }}</div><div class="stat-label">首个可用 IP</div></div>
+    <div class="stat-card ok"><div class="stat-value" style="font-size:1.1rem">{{ ipv4.last_host }}</div><div class="stat-label">末个可用 IP</div></div>
+    <div class="stat-card info"><div class="stat-value">{{ ipv4.total_hosts }}</div><div class="stat-label">可用主机数</div></div>
+    <div class="stat-card info"><div class="stat-value">{{ ipv4.total_ips }}</div><div class="stat-label">总 IP 数</div></div>
+  </div>
+  <p style="color:var(--text-muted);margin-top:12px;font-size:0.82rem">
+    前缀: /{{ ipv4.prefix_len }} | 私有: {{ '是' if ipv4.is_private else '否' }} | 二进制掩码: <code>{{ ipv4.binary_mask }}</code>
+  </p>
+</div>
+{% endif %}
+
+{% if ipv4_split %}
+<div class="card">
+  <h3>子网划分: {{ ipv4_split.parent }} → /{{ ipv4_split.new_prefix }}</h3>
+  <p style="color:var(--text-muted);margin-bottom:12px">{{ ipv4_split.subnet_count }} 个子网, 每子网 {{ ipv4_split.hosts_per_subnet }} 个可用 IP</p>
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>#</th><th>网络</th><th>首个可用</th><th>末个可用</th><th>广播</th><th>掩码</th></tr></thead>
+    <tbody>
+    {% for s in ipv4_split.subnets %}
+    <tr>
+      <td style="font-family:var(--font-mono)">{{ s.index }}</td>
+      <td style="font-family:var(--font-mono)">{{ s.network }}</td>
+      <td style="font-family:var(--font-mono)">{{ s.first }}</td>
+      <td style="font-family:var(--font-mono)">{{ s.last }}</td>
+      <td style="font-family:var(--font-mono)">{{ s.broadcast }}</td>
+      <td style="font-family:var(--font-mono)">{{ s.mask }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{% if ipv6 %}
+<div class="card">
+  <h3>IPv6: {{ ipv6.exploded }}</h3>
+  <div class="stat-cards" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="stat-card info"><div class="stat-value" style="font-size:1rem">{{ ipv6.cidr }}</div><div class="stat-label">CIDR</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:0.9rem">{{ ipv6.first_host }}</div><div class="stat-label">首个可用</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:0.9rem">{{ ipv6.last_host }}</div><div class="stat-label">末个可用</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1rem">{{ ipv6.total_ips }}</div><div class="stat-label">总 IP 数</div></div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

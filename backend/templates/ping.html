@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Ping 测试 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>网络诊断</h1>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<!-- ====== 1. Batch Ping ====== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>批量 Ping</h3>
+  <form method="post" action="/ping">
+    <textarea name="targets" rows="3" placeholder="输入 IP 地址，支持:&#10;CIDR: 192.168.1.0/24&#10;范围: 192.168.1.1-192.168.1.50&#10;逗号或换行分隔多个 IP" style="width:100%;max-width:500px;font-family:var(--font-mono);font-size:0.82rem;padding:10px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md);resize:vertical;margin-bottom:8px">{% if targets %}{{ targets }}{% endif %}</textarea>
+    <button type="submit" class="btn btn-primary">Ping</button>
+  </form>
+</div>
+
+<!-- ====== 2. Traceroute ====== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>路由追踪 (Traceroute / MTR)</h3>
+  <form method="post" action="/ping" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="text" name="trace_target" placeholder="目标 IP 或域名" value="{{ trace_host or '' }}" style="font-family:var(--font-mono);width:250px" required>
+    <button type="submit" class="btn btn-primary">开始追踪</button>
+    <span style="color:var(--text-dim);font-size:0.78rem">Linux 使用 MTR，Windows 使用 Tracert</span>
+  </form>
+</div>
+
+<!-- ====== 3. MTR (Raw) ====== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>MTR 原始报告</h3>
+  <form method="post" action="/ping" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="text" name="mtr_target" placeholder="目标 IP 或域名" value="{{ mtr_host or '' }}" style="font-family:var(--font-mono);width:250px" required>
+    <button type="submit" class="btn btn-primary">生成 MTR 报告</button>
+    <span style="color:var(--text-dim);font-size:0.78rem">仅 Linux 服务器支持</span>
+  </form>
+</div>
+
+<!-- ====== 4. Continuous Ping ====== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>持续 Ping 测试</h3>
+  <form method="post" action="/ping" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="text" name="cont_target" placeholder="目标 IP 或域名" value="{{ cont_host or '' }}" style="font-family:var(--font-mono);width:250px" required>
+    <input type="number" name="cont_count" value="{{ cont_count or '4' }}" min="1" max="100" style="width:80px;font-family:var(--font-mono)" title="发送次数">
+    <button type="submit" class="btn btn-primary">持续 Ping</button>
+    <span style="color:var(--text-dim);font-size:0.78rem">次数: 1-100</span>
+  </form>
+</div>
+
+<!-- ====== Results ====== -->
+
+{% if results %}
+<div class="card" style="margin-bottom:16px">
+  <h3>批量 Ping 结果: <span style="color:var(--accent);font-family:var(--font-mono)">{{ reachable }}</span>/{{ total }} 可达</h3>
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>IP</th><th>状态</th><th>平均延迟</th><th>最小/最大</th><th>丢包</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+    <tr>
+      <td style="font-family:var(--font-mono)">{{ r.ip }}</td>
+      <td>{% if r.reachable %}<span class="status-badge connected">可达</span>{% else %}<span class="status-badge error">不可达</span>{% endif %}</td>
+      <td style="font-family:var(--font-mono)">{{ r.avg_ms if r.reachable else '-' }} ms</td>
+      <td style="font-family:var(--font-mono)">{{ r.min_ms if r.reachable else '-' }}/{{ r.max_ms if r.reachable else '-' }} ms</td>
+      <td>{% if r.sent %}{{ r.sent - r.recv }}/{{ r.sent }}{% else %}-{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{% if trace_hops %}
+<div class="card" style="margin-bottom:16px">
+  <h3>路由追踪: <code>{{ trace_host }}</code></h3>
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>跳</th><th>IP</th><th>延迟</th></tr></thead>
+    <tbody>
+    {% for h in trace_hops %}
+    <tr>
+      <td style="font-family:var(--font-mono)">{{ h.hop }}</td>
+      <td style="font-family:var(--font-mono)">{{ h.ip }}</td>
+      <td style="font-family:var(--font-mono);font-size:0.8rem">{{ h.times }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if trace_raw %}
+  <details style="margin-top:8px">
+    <summary>原始输出</summary>
+    <pre style="max-height:300px;overflow-y:auto;white-space:pre-wrap;font-size:0.78rem">{{ trace_raw }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if mtr_output %}
+<div class="card" style="margin-bottom:16px">
+  <h3>MTR 报告: <code>{{ mtr_host }}</code></h3>
+  <pre style="max-height:500px;overflow-y:auto;white-space:pre-wrap;font-size:0.78rem">{{ mtr_output }}</pre>
+</div>
+{% endif %}
+
+{% if cont_results %}
+<div class="card" style="margin-bottom:16px">
+  <h3>持续 Ping: <code>{{ cont_host }}</code> ({{ cont_count }} 次)</h3>
+  <div class="stat-cards" style="margin-bottom:16px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+    <div class="stat-card ok"><div class="stat-value">{{ cont_recv }}/{{ cont_sent }}</div><div class="stat-label">成功</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.2rem">{{ cont_avg }}ms</div><div class="stat-label">平均延迟</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.2rem">{{ cont_min }}ms</div><div class="stat-label">最小延迟</div></div>
+    <div class="stat-card info"><div class="stat-value" style="font-size:1.2rem">{{ cont_max }}ms</div><div class="stat-label">最大延迟</div></div>
+    <div class="stat-card {{ 'err' if cont_loss != '0%' else 'ok' }}"><div class="stat-value" style="font-size:1.2rem">{{ cont_loss }}</div><div class="stat-label">丢包率</div></div>
+  </div>
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>序号</th><th>状态</th><th>延迟</th></tr></thead>
+    <tbody>
+    {% for r in cont_results %}
+    <tr>
+      <td style="font-family:var(--font-mono);width:60px">#{{ r.seq }}</td>
+      <td>{% if r.reachable %}<span class="status-badge connected">可达</span>{% else %}<span class="status-badge error">超时</span>{% endif %}</td>
+      <td style="font-family:var(--font-mono)">{{ '%.1f ms'|format(r.latency_ms) if r.latency_ms else '-' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

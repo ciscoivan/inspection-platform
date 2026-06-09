@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}ivan网络巡检运维平台{% endblock %}</title>
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<link href="/static/app.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar">
+  <a href="/" class="brand">ivan网络巡检运维平台</a>
+  <div class="nav-links">
+    <a href="/">仪表盘</a>
+    <a href="/devices">设备管理</a>
+    <a href="/reports">巡检报告</a>
+    <a href="/alerts">告警规则</a>
+    <a href="/config-compare">配置比较</a>
+    <a href="/config-push">配置推送</a>
+    <a href="/scheduler">定时巡检</a>
+    <a href="/ping">Ping 测试</a>
+    <a href="/subnet">子网计算</a>
+    <a href="/custom-commands">自定义命令</a>
+    <a href="/users">用户管理</a>
+    <a href="/logout" style="color:#EF4444">退出</a>
+  </div>
+</nav>
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- 巡检进度面板 -->
+<div id="inspect-panel" style="display:none;position:fixed;top:16px;right:16px;padding:16px 24px;border-radius:8px;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,0.6);max-width:420px;min-width:300px;white-space:pre-line;font-size:13px;line-height:1.6">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <strong id="panel-title">巡检进度</strong>
+    <span onclick="closeInspectPanel()" style="cursor:pointer;font-size:18px;opacity:0.6">×</span>
+  </div>
+  <div id="panel-body"></div>
+</div>
+
+<script>
+var _pollTimer = null;
+
+function closeInspectPanel() {
+  document.getElementById('inspect-panel').style.display = 'none';
+  localStorage.removeItem('inspect_run_id');
+  localStorage.removeItem('inspect_start');
+  if (_pollTimer) clearTimeout(_pollTimer);
+}
+
+function showPanel() {
+  document.getElementById('inspect-panel').style.display = 'block';
+}
+
+async function pollProgress(runId, startTime) {
+  if (!startTime) {
+    startTime = Date.now();
+    localStorage.setItem('inspect_start', startTime);
+  }
+  showPanel();
+  while (true) {
+    await new Promise(function(r) { _pollTimer = setTimeout(r, 2000); });
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    try {
+      var resp = await fetch('/inspect/status/' + runId);
+      var s = await resp.json();
+    } catch(e) { continue; }
+
+    var body = document.getElementById('panel-body');
+    var title = document.getElementById('panel-title');
+
+    if (s.done) {
+      localStorage.removeItem('inspect_run_id');
+      localStorage.removeItem('inspect_start');
+      title.textContent = '巡检完成 ✓';
+      var ok = true;
+      var msg = '已完成 ' + elapsed + 's\n';
+      if (s.progress) {
+        for (var ip in s.progress.devices) {
+          var info = s.progress.devices[ip];
+          var icon = info.status === 'connected' ? '✓' : '✗';
+          if (info.status !== 'connected') ok = false;
+          msg += icon + ' ' + ip + ' CPU=' + info.cpu + ' MEM=' + info.memory;
+          if (info.alerts && info.alerts.length > 0) {
+            msg += ' ⚠' + info.alerts.join(', ');
+          }
+          msg += '\n';
+        }
+      }
+      if (!ok) title.textContent = '巡检完成 (有失败)';
+      msg += '\n<button onclick="location.reload()" class="btn btn-sm btn-primary">刷新页面</button>';
+      body.innerHTML = msg;
+      return;
+    }
+
+    var p = s.progress;
+    if (p) {
+      title.textContent = '巡检中 ' + p.done + '/' + p.total;
+      var msg = p.done + '/' + p.total + ' 已完成 (' + elapsed + 's)\n';
+      for (var ip in p.devices) {
+        var info = p.devices[ip];
+        var icon = info.status === 'connected' ? '✓' : info.status === '等待中' ? '⏳' : '✗';
+        msg += icon + ' ' + ip + ' CPU=' + info.cpu + ' MEM=' + info.memory;
+        if (info.alerts && info.alerts.length > 0) {
+          msg += ' ⚠' + info.alerts.join(', ');
+        }
+        msg += '\n';
+      }
+      body.innerHTML = msg;
+    }
+
+    if (elapsed > 300) {
+      localStorage.removeItem('inspect_run_id');
+      localStorage.removeItem('inspect_start');
+      title.textContent = '巡检超时';
+      body.innerHTML = '超过 5 分钟，请手动刷新页面';
+      return;
+    }
+  }
+}
+
+async function triggerInspect(deviceId, deviceIp) {
+  var label = deviceId ? '巡检 ' + deviceIp + '？' : '巡检所有设备？';
+  if (!confirm(label)) return;
+  try {
+    var url = '/inspect';
+    if (deviceId) url += '?device_id=' + deviceId;
+    var resp = await fetch(url, {method:'POST'});
+    var data = await resp.json();
+  } catch(e) {
+    alert('请求失败: ' + e.message);
+    return;
+  }
+  if (data.error) { alert(data.error); return; }
+  localStorage.setItem('inspect_run_id', data.run_id);
+  localStorage.setItem('inspect_start', Date.now());
+  pollProgress(data.run_id, Date.now());
+}
+
+(function() {
+  var runId = localStorage.getItem('inspect_run_id');
+  if (runId) {
+    var startTime = parseInt(localStorage.getItem('inspect_start') || '0');
+    pollProgress(runId, startTime || Date.now());
+  }
+})();
+</script>
+</body>
+</html>

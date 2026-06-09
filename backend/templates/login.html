@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}登录 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<style>
+.login-box { max-width:380px; margin:80px auto; background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-lg); padding:36px; box-shadow:var(--shadow-lg); }
+.login-box h1 { text-align:center; color:var(--text-primary); margin-bottom:8px; font-size:1.4rem; }
+.login-box .subtitle { text-align:center; color:var(--text-muted); margin-bottom:24px; font-size:0.85rem; }
+.login-box label { display:block; margin-bottom:4px; color:var(--text-muted); }
+.login-box input { width:100%; margin-bottom:16px; padding:10px 14px; }
+.login-box button { width:100%; padding:12px; font-size:1rem; }
+</style>
+
+<div class="login-box">
+  <h1>⚡ ivan网络巡检运维平台</h1>
+  <p class="subtitle">Network Inspection Platform</p>
+  {% if error %}
+  <div class="alert alert-error" style="margin-bottom:16px">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/login">
+    <label>用户名</label>
+    <input type="text" name="username" placeholder="输入用户名" required autofocus>
+    <label>密码</label>
+    <input type="password" name="password" placeholder="输入密码" required>
+    <button type="submit" class="btn btn-primary">登 录</button>
+  </form>
+</div>
+
+{% endblock %}

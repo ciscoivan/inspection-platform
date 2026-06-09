@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}配置推送 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>配置推送</h1>
+<p style="color:var(--text-muted);margin-bottom:24px">向网络设备推送配置命令 &mdash; 使用 <code>send_config_set</code> 自动进入配置模式</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<!-- ========== INPUT MODE ========== -->
+{% if mode == "input" %}
+<form method="post" action="/config-push/preview" enctype="multipart/form-data">
+
+  <!-- Device Selection -->
+  <div class="card" style="margin-bottom:16px">
+    <h3>1. 选择目标设备</h3>
+    <div style="margin-bottom:10px">
+      <label style="cursor:pointer"><input type="checkbox" id="select-all" onclick="toggleAll(this)"> <strong>全选 / 取消全选</strong></label>
+      <span id="selected-count" style="color:var(--text-muted);margin-left:12px;font-family:var(--font-mono)"></span>
+    </div>
+    <div class="device-select-grid">
+      {% for d in devices %}
+      <label class="device-checkbox-label">
+        <input type="checkbox" name="device_ids" value="{{ d.id }}" class="dev-checkbox" style="margin-right:10px">
+        <span>
+          <strong>{{ d.ip }}</strong>
+          <span style="color:var(--text-muted);font-size:0.8rem;margin-left:8px">{{ d.hostname or '' }}</span>
+          <span style="display:block;font-size:0.75rem;color:var(--text-dim);margin-top:2px">
+            {{ d.device_type }}
+            {% if d.status == 'connected' %}<span class="status-badge connected" style="margin-left:6px">在线</span>
+            {% elif d.status == 'error' %}<span class="status-badge error" style="margin-left:6px">异常</span>
+            {% else %}<span class="status-badge unknown" style="margin-left:6px">{{ d.status }}</span>
+            {% endif %}
+          </span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Command Input -->
+  <div class="card" style="margin-bottom:16px">
+    <h3>2. 输入配置命令</h3>
+    <div style="margin-bottom:12px">
+      <label style="cursor:pointer;margin-right:16px">
+        <input type="radio" name="input_mode" value="text" checked onchange="toggleInputMode()"> 粘贴命令
+      </label>
+      <label style="cursor:pointer">
+        <input type="radio" name="input_mode" value="file" onchange="toggleInputMode()"> 上传文件
+      </label>
+    </div>
+    <div id="text-input-area">
+      <textarea name="config_commands" rows="15" style="width:100%;font-family:var(--font-mono);font-size:0.85rem;padding:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md);resize:vertical"
+        placeholder="输入要推送的配置命令，每行一条命令。以 # 开头的行视为注释将被忽略。&#10;&#10;示例:&#10;interface Loopback100&#10; description Test by inspection&#10; ip address 10.255.255.1 255.255.255.255&#10; no shutdown&#10;end&#10;write memory"
+      ></textarea>
+    </div>
+    <div id="file-input-area" style="display:none">
+      <input type="file" name="config_file" accept=".txt,.cfg,.conf"
+             style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);width:100%;background:var(--bg-primary);color:var(--text-primary)">
+      <p style="color:var(--text-dim);font-size:0.78rem;margin-top:4px">支持 .txt / .cfg / .conf 文件，最大 2MB</p>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary btn-lg">预览推送内容</button>
+</form>
+{% endif %}
+
+<!-- ========== PREVIEW MODE ========== -->
+{% if mode == "preview" %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+  <div class="card">
+    <h3>目标设备 ({{ selected_devices|length }})</h3>
+    <div class="table-wrapper">
+    <table>
+      <thead><tr><th>IP</th><th>主机名</th><th>平台</th><th>状态</th></tr></thead>
+      <tbody>
+      {% for d in selected_devices %}
+      <tr>
+        <td style="font-family:var(--font-mono)">{{ d.ip }}</td>
+        <td>{{ d.hostname or 'N/A' }}</td>
+        <td>{{ d.device_type }}</td>
+        <td>
+          {% if d.status == 'connected' %}<span class="status-badge connected">在线</span>
+          {% else %}<span class="status-badge error">{{ d.status }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>待推送命令 ({{ commands|length }} 条)</h3>
+    <pre style="max-height:300px;overflow-y:auto;white-space:pre-wrap">{% for c in commands %}{{ loop.index }}. {{ c }}
+{% endfor %}</pre>
+  </div>
+</div>
+
+<div style="margin-top:20px;display:flex;gap:12px;align-items:center">
+  <form method="post" action="/config-push/execute" style="display:inline">
+    <input type="hidden" name="device_ids_str" value="{{ device_ids }}">
+    <input type="hidden" name="commands_text" value="{{ commands_text }}">
+    <button type="submit" class="btn btn-success btn-lg" onclick="var b=this;setTimeout(function(){b.disabled=true;b.textContent='推送中...';b.style.opacity='0.6'},10)">
+      确认推送 ({{ selected_devices|length }} 台设备)
+    </button>
+  </form>
+  <a href="/config-push" class="btn btn-ghost">取消，返回修改</a>
+</div>
+{% endif %}
+
+<!-- ========== RESULT MODE ========== -->
+{% if mode == "result" %}
+<div class="card" style="margin-bottom:16px">
+  <h3>
+    推送结果:
+    {% if fail_count == 0 %}
+      <span style="color:var(--accent)">全部成功 ✓</span>
+    {% elif success_count > 0 %}
+      <span style="color:var(--warn)">部分成功</span>
+    {% else %}
+      <span style="color:var(--danger)">全部失败 ✗</span>
+    {% endif %}
+    &nbsp;<span style="font-size:0.9rem;font-weight:normal;color:var(--text-muted)">成功 {{ success_count }}/{{ total }}</span>
+  </h3>
+
+  <details style="margin-bottom:16px">
+    <summary>已推送命令 ({{ commands|length }} 条)</summary>
+    <pre style="margin-top:8px;white-space:pre-wrap">{% for c in commands %}{{ c }}
+{% endfor %}</pre>
+  </details>
+
+  {% for r in results %}
+  <div class="result-card {{ 'success' if r.success else 'failed' }}">
+    <div class="result-card-header">
+      <span>
+        <strong style="font-family:var(--font-mono)">{{ r.ip }}</strong>
+        <span style="color:var(--text-muted);margin-left:8px;font-size:0.82rem">{{ r.hostname }} · {{ r.device_type }}</span>
+      </span>
+      <span class="status-badge {{ 'connected' if r.success else 'error' }}">
+        {{ '✓ 成功' if r.success else '✗ 失败' }}
+      </span>
+    </div>
+    {% if r.error %}
+    <div style="padding:10px 16px;color:#FCA5A5;font-size:0.85rem">
+      <strong>错误:</strong> {{ r.error }}
+    </div>
+    {% endif %}
+    {% if r.output %}
+    <details>
+      <summary style="padding:8px 16px">查看输出</summary>
+      <pre style="margin:0 16px 16px;max-height:300px;overflow-y:auto;white-space:pre-wrap">{{ r.output }}</pre>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<a href="/config-push" class="btn btn-primary">发起新的推送</a>
+{% endif %}
+
+<script>
+function toggleAll(el) {
+  document.querySelectorAll('.dev-checkbox').forEach(function(cb) { cb.checked = el.checked; });
+  updateCount();
+}
+function updateCount() {
+  var n = document.querySelectorAll('.dev-checkbox:checked').length;
+  var el = document.getElementById('selected-count');
+  if (el) el.textContent = n + ' 台已选';
+}
+document.querySelectorAll('.dev-checkbox').forEach(function(cb) { cb.addEventListener('change', updateCount); });
+updateCount();
+
+function toggleInputMode() {
+  var fileMode = document.querySelector('input[name="input_mode"][value="file"]').checked;
+  document.getElementById('text-input-area').style.display = fileMode ? 'none' : 'block';
+  document.getElementById('file-input-area').style.display = fileMode ? 'block' : 'none';
+}
+</script>
+
+{% endblock %}

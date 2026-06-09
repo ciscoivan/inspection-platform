@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}即时巡检 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>即时巡检</h1>
+<p style="color:var(--text-muted);margin-bottom:20px">立即对选中设备执行巡检，查看实时状态更新</p>
+
+<div class="card">
+  <h3>选择巡检设备</h3>
+  <div id="deviceList" style="margin-bottom:16px">
+    <p style="color:var(--text-muted)">加载设备列表...</p>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button onclick="startAdhocInspect()" class="btn btn-success btn-lg">开始巡检</button>
+    <a href="/dashboard" class="btn btn-ghost">返回仪表盘</a>
+  </div>
+</div>
+
+<div id="inspectResult" style="margin-top:16px"></div>
+
+<script>
+async function loadDevices() {
+  try {
+    var resp = await fetch('/devices/api');
+    var devices = await resp.json();
+    if (!Array.isArray(devices)) {
+      document.getElementById('deviceList').innerHTML = '<div class="alert alert-error">需要登录后才能查看设备</div>';
+      return;
+    }
+    var html = '<div style="margin-bottom:8px"><label><input type="checkbox" id="selectAllAdhoc" onchange="toggleAllAdhoc(this)"> <strong>全选</strong></label></div>';
+    html += '<div class="device-select-grid">';
+    devices.forEach(function(d) {
+      html += '<label class="device-checkbox-label">';
+      html += '<input type="checkbox" name="adhoc_devices" value="' + d.id + '" class="adhoc-checkbox" style="margin-right:10px">';
+      html += '<span><strong>' + d.ip + '</strong>';
+      html += '<span style="color:var(--text-muted);font-size:0.8rem;margin-left:8px">' + (d.hostname || '') + '</span>';
+      html += '<span style="display:block;font-size:0.75rem;color:var(--text-dim);margin-top:2px">' + d.device_type;
+      if (d.status === 'connected') html += '<span class="status-badge connected" style="margin-left:6px">在线</span>';
+      else if (d.status === 'error') html += '<span class="status-badge error" style="margin-left:6px">异常</span>';
+      html += '</span></span></label>';
+    });
+    html += '</div>';
+    document.getElementById('deviceList').innerHTML = html;
+  } catch(e) {
+    document.getElementById('deviceList').innerHTML = '<div class="alert alert-error">加载设备失败: ' + e.message + '</div>';
+  }
+}
+
+function toggleAllAdhoc(el) {
+  document.querySelectorAll('.adhoc-checkbox').forEach(function(cb) { cb.checked = el.checked; });
+}
+
+async function startAdhocInspect() {
+  var checked = document.querySelectorAll('.adhoc-checkbox:checked');
+  if (checked.length === 0) { alert('请选择至少一台设备'); return; }
+  for (var cb of checked) {
+    try {
+      var resp = await fetch('/inspect?device_id=' + cb.value, {method:'POST'});
+      var data = await resp.json();
+      if (data.run_id) {
+        localStorage.setItem('inspect_run_id', data.run_id);
+        localStorage.setItem('inspect_start', Date.now());
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  }
+  location.href = '/dashboard';
+}
+
+loadDevices();
+</script>
+
+{% endblock %}

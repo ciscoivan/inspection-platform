@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}设备管理 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<style>
+.inline-form { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.add-form { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px; margin-bottom:20px; }
+</style>
+
+<h1>设备管理</h1>
+
+<div style="margin-bottom:15px">
+  <button class="btn btn-primary" onclick="document.getElementById('addForm').style.display='block';this.style.display='none'">+ 添加设备</button>
+  <button class="btn btn-success" onclick="triggerInspect()">巡检所有设备</button>
+</div>
+
+<div id="addForm" class="add-form" style="display:none">
+  <h3>添加新设备</h3>
+  <form method="post" action="/devices/add" class="inline-form">
+    <input type="text" name="ip" placeholder="IP 地址" required>
+    <select name="device_type" required>
+      <option value="">选择设备类型</option>
+      <option value="cisco_ios">Cisco IOS/IOS-XE</option>
+      <option value="cisco_xr">Cisco IOS-XR</option>
+      <option value="cisco_nxos">Cisco NX-OS</option>
+      <option value="juniper">Juniper JunOS</option>
+      <option value="huawei">Huawei VRP</option>
+      <option value="hp_comware">H3C Comware</option>
+      <option value="fortinet">Fortinet FortiOS</option>
+      <option value="arista_eos">Arista EOS</option>
+      <option value="ruijie_os">Ruijie RGOS</option>
+    </select>
+    <input type="text" name="username" placeholder="SSH 用户名" required>
+    <input type="password" name="password" placeholder="SSH 密码" required>
+    <input type="number" name="port" value="22" placeholder="端口" style="width:80px">
+    <button type="submit" class="btn btn-success">添加</button>
+    <button type="button" class="btn btn-ghost" onclick="document.getElementById('addForm').style.display='none';document.querySelector('button[onclick]').style.display='inline-block'">取消</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>设备列表 ({{ devices|length }})</h3>
+  <div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>IP</th><th>主机名</th><th>类型</th><th>端口</th><th>状态</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+    {% for d in devices %}
+    <tr class="{{ 'row-err' if d.status == 'error' else '' }}">
+      <td style="font-family:var(--font-mono)">{{ d.ip }}</td>
+      <td>{{ d.hostname or 'N/A' }}</td>
+      <td>{{ d.device_type }}</td>
+      <td style="font-family:var(--font-mono)">{{ d.port }}</td>
+      <td>
+        {% if d.status == 'connected' %}<span class="status-badge connected">在线</span>
+        {% elif d.status == 'error' %}<span class="status-badge error">异常</span>
+        {% elif d.status == 'timeout' %}<span class="status-badge error">超时</span>
+        {% elif d.status == 'auth_failed' %}<span class="status-badge error">认证失败</span>
+        {% else %}<span class="status-badge unknown">{{ d.status }}</span>{% endif %}
+      </td>
+      <td>
+        <button onclick="triggerInspect({{ d.id }}, '{{ d.ip }}')" class="btn btn-sm btn-primary">巡检</button>
+        <button onclick="editDevice({{ d.id }}, '{{ d.ip }}', '{{ d.device_type }}', '{{ d.username }}', '{{ d.port }}')" class="btn btn-sm btn-ghost">编辑</button>
+        <button onclick="deleteDevice({{ d.id }}, '{{ d.ip }}')" class="btn btn-sm btn-danger">删除</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;min-width:400px" id="editModalContent">
+    <h3>编辑设备</h3>
+    <form id="editForm" style="display:flex;flex-direction:column;gap:10px">
+      <input type="hidden" id="editId">
+      <label>IP: <input type="text" id="editIp" required></label>
+      <label>类型: <select id="editType" required>
+        <option value="cisco_ios">Cisco IOS/IOS-XE</option>
+        <option value="cisco_xr">Cisco IOS-XR</option>
+        <option value="cisco_nxos">Cisco NX-OS</option>
+        <option value="juniper">Juniper JunOS</option>
+        <option value="huawei">Huawei VRP</option>
+        <option value="hp_comware">H3C Comware</option>
+        <option value="fortinet">Fortinet FortiOS</option>
+        <option value="arista_eos">Arista EOS</option>
+        <option value="ruijie_os">Ruijie RGOS</option>
+      </select></label>
+      <label>SSH 用户名: <input type="text" id="editUser" required></label>
+      <label>SSH 密码: <input type="password" id="editPass" placeholder="留空不修改"></label>
+      <label>端口: <input type="number" id="editPort" value="22"></label>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('editModal').style.display='none'">取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function editDevice(id, ip, dtype, user, port) {
+  document.getElementById('editId').value = id;
+  document.getElementById('editIp').value = ip;
+  document.getElementById('editType').value = dtype;
+  document.getElementById('editUser').value = user;
+  document.getElementById('editPort').value = port;
+  document.getElementById('editPass').value = '';
+  document.getElementById('editModal').style.display = 'flex';
+}
+
+document.getElementById('editForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var id = document.getElementById('editId').value;
+  var body = {
+    ip: document.getElementById('editIp').value,
+    device_type: document.getElementById('editType').value,
+    username: document.getElementById('editUser').value,
+    port: parseInt(document.getElementById('editPort').value)
+  };
+  var pass = document.getElementById('editPass').value;
+  if (pass) body.password = pass;
+  var resp = await fetch('/devices/api/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  if (resp.ok) { location.reload(); } else { alert('更新失败'); }
+});
+
+async function deleteDevice(id, ip) {
+  if (!confirm('确定删除设备 ' + ip + '？')) return;
+  var resp = await fetch('/devices/api/' + id, {method:'DELETE'});
+  if (resp.ok) { location.reload(); } else { alert('删除失败'); }
+}
+</script>
+
+{% endblock %}

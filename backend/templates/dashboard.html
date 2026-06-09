@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <h1 style="margin-bottom:0">仪表盘</h1>
+  <div style="text-align:right">
+    <div id="live-clock" style="font-family:var(--font-mono);font-size:1.8rem;font-weight:700;color:var(--text-primary);line-height:1.2">--:--:--</div>
+    <div id="live-date" style="font-size:0.85rem;color:var(--text-muted);margin-top:2px">----年--月--日</div>
+  </div>
+</div>
+
+<div class="stat-cards">
+  <div class="stat-card info" onclick="triggerInspect()" title="点击巡检所有设备">
+    <div class="stat-value">{{ total }}</div>
+    <div class="stat-label">设备总数</div>
+  </div>
+  <div class="stat-card ok">
+    <div class="stat-value">{{ connected }}</div>
+    <div class="stat-label">在线设备</div>
+  </div>
+  <div class="stat-card {{ 'err' if failed > 0 else 'ok' }}">
+    <div class="stat-value">{{ failed }}</div>
+    <div class="stat-label">异常设备</div>
+  </div>
+  <div class="stat-card info">
+    <div class="stat-value" style="font-size:1.3rem" id="last-inspect-time">{{ latest[0].timestamp.strftime('%H:%M') if latest else '--:--' }}</div>
+    <div class="stat-label">最近巡检</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <h3>设备状态</h3>
+  <div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>IP</th><th>主机名</th><th>类型</th><th>状态</th><th>CPU</th><th>内存</th><th>运行时间</th><th>上次巡检</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+    {% for r in latest %}
+    <tr class="{{ 'row-err' if r.status != 'connected' else '' }}">
+      <td style="font-family:var(--font-mono)">{{ r.device.ip if r.device else '?' }}</td>
+      <td>{{ r.hostname }}</td>
+      <td>{{ r.device.device_type if r.device else '?' }}</td>
+      <td>
+        {% if r.status == 'connected' %}<span class="status-badge connected">在线</span>
+        {% elif r.status == 'error' %}<span class="status-badge error">异常</span>
+        {% else %}<span class="status-badge unknown">{{ r.status }}</span>{% endif %}
+      </td>
+      <td style="font-family:var(--font-mono)">{{ r.cpu }}</td>
+      <td style="font-family:var(--font-mono)">{{ r.memory }}</td>
+      <td style="font-size:0.82rem;color:var(--text-muted)">{{ r.uptime }}</td>
+      <td style="font-size:0.78rem;color:var(--text-dim)">{{ r.timestamp.strftime('%m-%d %H:%M') if r.timestamp else '-' }}</td>
+      <td>
+        <button onclick="triggerInspect({{ r.device_id }}, '{{ r.device.ip if r.device else '' }}')" class="btn btn-sm btn-primary">巡检</button>
+        <a href="/reports/{{ r.id }}" class="btn btn-sm btn-ghost">报告</a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<script>
+function updateClock() {
+  var now = new Date();
+  var h = String(now.getHours()).padStart(2, '0');
+  var m = String(now.getMinutes()).padStart(2, '0');
+  var s = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('live-clock').textContent = h + ':' + m + ':' + s;
+
+  var days = ['日','一','二','三','四','五','六'];
+  var dateStr = now.getFullYear() + '年' + (now.getMonth()+1) + '月' + now.getDate() + '日 星期' + days[now.getDay()];
+  document.getElementById('live-date').textContent = dateStr;
+}
+updateClock();
+setInterval(updateClock, 1000);
+</script>
+
+{% endblock %}

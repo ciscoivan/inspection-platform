@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}定时巡检 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>定时巡检</h1>
+<p style="color:var(--text-muted);margin-bottom:20px">配置自动化巡检计划 — 支持一次性、每小时、每天、每月定时执行</p>
+
+<!-- ========== Add Schedule ========== -->
+<div class="card" style="margin-bottom:20px" id="add-form-card">
+  <h3 id="add-form-title">添加定时任务</h3>
+  <form method="post" action="/scheduler/add">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <input type="text" name="name" placeholder="任务名称" required style="width:200px">
+      <select name="schedule_type" id="schedule-type" required onchange="showScheduleConfig(this.value)" style="width:150px">
+        <option value="">选择类型</option>
+        <option value="once">一次性</option>
+        <option value="hourly">每小时</option>
+        <option value="daily">每天</option>
+        <option value="monthly">每月</option>
+      </select>
+      <!-- Daily / Once / Monthly: time input -->
+      <span id="cfg-time" style="display:none">
+        <input type="time" name="schedule_time" value="06:00" style="font-family:var(--font-mono);width:130px">
+      </span>
+      <!-- Once: date input -->
+      <span id="cfg-date" style="display:none">
+        <input type="date" name="schedule_date" style="font-family:var(--font-mono);width:160px">
+      </span>
+      <!-- Monthly: day input -->
+      <span id="cfg-day" style="display:none">
+        <input type="number" name="schedule_day" value="1" min="1" max="28" style="width:70px;font-family:var(--font-mono)" title="每月第几天">
+      </span>
+      <!-- Hourly: interval -->
+      <span id="cfg-interval" style="display:none">
+        <span style="color:var(--text-muted);font-size:0.85rem">间隔</span>
+        <input type="number" name="interval_hours" value="1" min="1" max="24" style="width:60px;font-family:var(--font-mono)">
+        <span style="color:var(--text-muted);font-size:0.85rem">小时</span>
+      </span>
+    </div>
+
+    <!-- Device Selection -->
+    <details style="margin-bottom:12px">
+      <summary>选择巡检设备 <span style="color:var(--text-dim);font-size:0.8rem">(不选 = 全部设备)</span></summary>
+      <div style="margin-top:8px">
+        <label style="cursor:pointer"><input type="checkbox" id="sched-dev-all" onclick="toggleAllSchedDev(this)"> 全选</label>
+        <div class="device-select-grid">
+          {% for d in devices %}
+          <label class="device-checkbox-label">
+            <input type="checkbox" name="device_ids" value="{{ d.id }}" class="sched-dev" style="margin-right:8px">
+            <span>
+              <strong style="font-family:var(--font-mono);font-size:0.82rem">{{ d.ip }}</strong>
+              <span style="font-size:0.75rem;color:var(--text-dim);margin-left:6px">{{ d.hostname or '' }} · {{ d.device_type }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </details>
+
+    <button type="submit" class="btn btn-primary">添加任务</button>
+  </form>
+</div>
+
+<!-- ========== Schedule List ========== -->
+<div class="card">
+  <h3>定时任务列表 ({{ schedules|length }})</h3>
+  {% if schedules %}
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>名称</th><th>类型</th><th>配置</th><th>设备</th><th>上次运行</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for s in schedules %}
+    <tr>
+      <td><strong>{{ s.name }}</strong></td>
+      <td>
+        {% if s.schedule_type == 'once' %}<span class="status-badge connected">一次性</span>
+        {% elif s.schedule_type == 'hourly' %}<span class="status-badge info-badge">每小时</span>
+        {% elif s.schedule_type == 'daily' %}<span class="status-badge connected">每天</span>
+        {% elif s.schedule_type == 'monthly' %}<span class="status-badge info-badge">每月</span>
+        {% endif %}
+      </td>
+      <td style="font-family:var(--font-mono);font-size:0.82rem">
+        {% if s.schedule_type == 'once' %}{{ s.schedule_config.get('date','') }} {{ s.schedule_config.get('time','') }}
+        {% elif s.schedule_type == 'hourly' %}每 {{ s.schedule_config.get('interval_hours',1) }} 小时
+        {% elif s.schedule_type == 'daily' %}{{ s.schedule_config.get('time','06:00') }}
+        {% elif s.schedule_type == 'monthly' %}{{ s.schedule_config.get('day',1) }}日 {{ s.schedule_config.get('time','06:00') }}
+        {% endif %}
+      </td>
+      <td style="font-size:0.8rem;color:var(--text-muted)">
+        {% if s.device_ids %}{{ s.device_ids|length }} 台{% else %}全部{% endif %}
+      </td>
+      <td style="font-size:0.8rem;color:var(--text-dim)">
+        {{ s.last_run.strftime('%m-%d %H:%M') if s.last_run else '未执行' }}
+      </td>
+      <td>
+        {% if s.enabled %}<span class="status-badge connected">启用</span>
+        {% else %}<span class="status-badge unknown">禁用</span>{% endif %}
+      </td>
+      <td>
+        <button type="button" class="btn btn-sm btn-success" onclick="runSchedulerNow({{ s.id }}, '{{ s.name }}')">立即执行</button>
+        <form method="post" action="/scheduler/toggle/{{ s.id }}" style="display:inline">
+          <button type="submit" class="btn btn-sm btn-ghost">{% if s.enabled %}禁用{% else %}启用{% endif %}</button>
+        </form>
+        <form method="post" action="/scheduler/delete/{{ s.id }}" style="display:inline" onsubmit="return confirm('确定删除此定时任务？')">
+          <button type="submit" class="btn btn-sm btn-danger">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--text-dim);padding:20px 0;text-align:center">暂无定时任务，请添加上方的定时巡检计划</p>
+  {% endif %}
+</div>
+
+<script>
+function showScheduleConfig(type) {
+  document.getElementById('cfg-time').style.display = (type === 'once' || type === 'daily' || type === 'monthly') ? 'inline' : 'none';
+  document.getElementById('cfg-date').style.display = (type === 'once') ? 'inline' : 'none';
+  document.getElementById('cfg-day').style.display = (type === 'monthly') ? 'inline' : 'none';
+  document.getElementById('cfg-interval').style.display = (type === 'hourly') ? 'inline' : 'none';
+}
+function toggleAllSchedDev(el) {
+  document.querySelectorAll('.sched-dev').forEach(function(cb) { cb.checked = el.checked; });
+}
+
+async function runSchedulerNow(schedId, schedName) {
+  if (!confirm('立即执行定时任务: ' + schedName + '？')) return;
+  try {
+    var resp = await fetch('/scheduler/run-now/' + schedId, {
+      method: 'POST',
+      headers: {'Accept': 'application/json'}
+    });
+    var data = await resp.json();
+  } catch(e) {
+    alert('请求失败: ' + e.message);
+    return;
+  }
+  if (data.error) { alert(data.error); return; }
+  // Use the existing progress panel from base.html
+  localStorage.setItem('inspect_run_id', data.run_id);
+  localStorage.setItem('inspect_start', Date.now());
+  pollProgress(data.run_id, Date.now());
+}
+
+// Add "info-badge" style if not in CSS
+if (!document.querySelector('style#sched-style')) {
+  var style = document.createElement('style');
+  style.id = 'sched-style';
+  style.textContent = '.info-badge { color: var(--info); background: var(--info-glow); }';
+  document.head.appendChild(style);
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}配置对比 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>配置对比</h1>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <form method="post" action="/config-compare" enctype="multipart/form-data">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div>
+        <h3>配置 A</h3>
+        <textarea name="config_a" rows="14" style="width:100%;font-family:var(--font-mono);font-size:0.82rem;padding:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md);resize:vertical" placeholder="粘贴配置内容或上传文件">{{ config_a or '' }}</textarea>
+        <p style="margin-top:4px;color:var(--text-dim);font-size:0.78rem">或上传: <input type="file" name="file_a" accept=".txt,.cfg,.conf" style="font-size:0.82rem"></p>
+      </div>
+      <div>
+        <h3>配置 B</h3>
+        <textarea name="config_b" rows="14" style="width:100%;font-family:var(--font-mono);font-size:0.82rem;padding:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md);resize:vertical" placeholder="粘贴配置内容或上传文件">{{ config_b or '' }}</textarea>
+        <p style="margin-top:4px;color:var(--text-dim);font-size:0.78rem">或上传: <input type="file" name="file_b" accept=".txt,.cfg,.conf" style="font-size:0.82rem"></p>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-lg">对比配置</button>
+  </form>
+</div>
+
+{% if diff %}
+<div class="card" style="margin-bottom:16px">
+  <h3>对比结果
+    <span style="font-weight:normal;font-size:0.85rem;color:var(--text-muted)">
+      A: {{ lines_a }} 行 | B: {{ lines_b }} 行 | 差异: {{ lines_diff }} 行
+    </span>
+  </h3>
+  <pre style="max-height:500px;overflow-y:auto;white-space:pre-wrap;font-size:0.82rem">{% for line in diff %}{{ line }}
+{% endfor %}</pre>
+</div>
+{% endif %}
+
+{% if html_diff %}
+<div class="card">
+  <h3>并排对比</h3>
+  <div style="overflow-x:auto;font-size:0.82rem">
+    {{ html_diff | safe }}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

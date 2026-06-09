@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}巡检对比{% endblock %}
+{% block content %}
+<h1>巡检对比</h1>
+{% if run1 and run2 %}
+<table>
+<tr><th>指标</th><th>#{{ run1.id }} ({{ run1.timestamp.strftime('%m-%d %H:%M') }})</th><th>#{{ run2.id }} ({{ run2.timestamp.strftime('%m-%d %H:%M') }})</th></tr>
+<tr><td>CPU</td><td>{{ run1.cpu }}</td><td>{{ run2.cpu }}</td></tr>
+<tr><td>内存</td><td>{{ run1.memory }}</td><td>{{ run2.memory }}</td></tr>
+<tr><td>运行时间</td><td>{{ run1.uptime }}</td><td>{{ run2.uptime }}</td></tr>
+<tr><td>状态</td><td>{{ run1.status }}</td><td>{{ run2.status }}</td></tr>
+</table>
+{% else %}
+<p>未找到指定的巡检记录</p>
+{% endif %}
+{% endblock %}

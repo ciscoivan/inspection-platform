@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}自定义命令 - ivan网络巡检运维平台{% endblock %}
+{% block content %}
+
+<h1>自定义命令</h1>
+
+<!-- ========== Add Command ========== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>添加命令</h3>
+  <form method="post" action="/custom-commands/add" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <select name="device_type" required>
+      <option value="">平台:</option>
+      {% for p in platforms %}
+      <option value="{{ p[0] }}">{{ p[1] }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="command" placeholder="命令" required style="width:200px;font-family:var(--font-mono)">
+    <input type="text" name="description" placeholder="描述 (可选)" style="width:200px">
+    <button type="submit" class="btn btn-primary">添加</button>
+  </form>
+</div>
+
+<!-- ========== Multi-Device Batch Result ========== -->
+{% if multi_results %}
+<div class="card" style="margin-bottom:16px">
+  <h3>多设备批量执行结果 ({{ multi_results|length }} 台设备)
+    {% set ok = multi_results|selectattr('status','equalto','connected')|list|length %}
+    <span style="font-size:0.85rem;color:var(--text-muted)">
+      成功 {{ ok }}/{{ multi_results|length }}
+    </span>
+  </h3>
+  <p style="color:var(--text-dim);font-size:0.78rem;margin-bottom:12px">已自动保存到 <a href="/reports">巡检报告</a></p>
+  {% for dr in multi_results %}
+  <div class="result-card {{ 'success' if dr.status == 'connected' else 'failed' }}">
+    <div class="result-card-header">
+      <span>
+        <strong style="font-family:var(--font-mono)">{{ dr.ip }}</strong>
+        <span style="color:var(--text-muted);margin-left:8px;font-size:0.82rem">{{ dr.hostname }} · {{ dr.device_type }}</span>
+      </span>
+      <span class="status-badge {{ 'connected' if dr.status == 'connected' else 'error' }}">
+        {{ 'OK' if dr.status == 'connected' else 'FAIL' }}
+      </span>
+    </div>
+    {% if dr.error %}
+    <div style="padding:10px 16px;color:#FCA5A5;font-size:0.85rem"><strong>错误:</strong> {{ dr.error }}</div>
+    {% endif %}
+    {% for desc, out in dr.results.items() %}
+    <details {% if loop.first %}open{% endif %}>
+      <summary style="padding:8px 16px;font-family:var(--font-mono);font-size:0.85rem">{{ desc }}</summary>
+      <pre style="margin:0 16px 16px;max-height:250px;overflow-y:auto;white-space:pre-wrap;font-size:0.78rem">{{ out }}</pre>
+    </details>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ========== Single/Batch Result (existing) ========== -->
+{% if batch_result %}
+<div class="card" style="margin-bottom:16px;border-color:{{ 'rgba(34,197,94,0.3)' if batch_result.status == 'connected' else 'rgba(239,68,68,0.3)' }}">
+  <h3>执行结果: {{ batch_result.device.hostname or batch_result.device.ip }}
+    <span class="status-badge {{ 'connected' if batch_result.status == 'connected' else 'error' }}">{{ '成功' if batch_result.status == 'connected' else '失败' }}</span>
+  </h3>
+  {% if batch_result.error %}<div class="alert alert-error">{{ batch_result.error }}</div>{% endif %}
+  {% for desc, out in batch_result.results.items() %}
+  <details style="margin-bottom:8px" {% if loop.first %}open{% endif %}>
+    <summary style="font-family:var(--font-mono);font-size:0.85rem">{{ desc }}</summary>
+    <pre style="max-height:300px;overflow-y:auto;white-space:pre-wrap;font-size:0.78rem;margin-top:4px">{{ out }}</pre>
+  </details>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if exec_result %}
+<div class="card" style="margin-bottom:16px;border-color:{{ 'rgba(34,197,94,0.3)' if exec_result.success else 'rgba(239,68,68,0.3)' }}">
+  <h3>执行结果: {{ exec_result.hostname }}
+    <span class="status-badge {{ 'connected' if exec_result.success else 'error' }}">{{ '成功' if exec_result.success else '失败' }}</span>
+  </h3>
+  <pre style="max-height:400px;overflow-y:auto;white-space:pre-wrap;font-size:0.82rem">{{ exec_result.output }}</pre>
+</div>
+{% endif %}
+
+<!-- ========== MAIN: Multi-Device Execute ========== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>多设备批量执行 <span style="font-weight:normal;font-size:0.8rem;color:var(--text-muted)">— 选择命令 + 选择目标设备，所有结果自动保存到巡检报告</span></h3>
+
+  <form method="post" action="/custom-commands/execute-multi">
+    <!-- Step 1: Pick commands -->
+    <div style="margin-bottom:16px">
+      <h4 style="color:var(--text-muted);margin-bottom:6px">1. 选择要执行的命令</h4>
+      <label style="cursor:pointer"><input type="checkbox" id="multi-cmd-all" onclick="toggleAll('multi-cmd')"> 全选</label>
+      <div class="device-select-grid" style="margin-top:6px">
+        {% for c in cmds %}
+        {% if c.enabled %}
+        <label class="device-checkbox-label">
+          <input type="checkbox" name="cmd_ids" value="{{ c.id }}" class="multi-cmd" style="margin-right:10px">
+          <span>
+            <strong style="font-family:var(--font-mono);font-size:0.82rem">{{ c.command }}</strong>
+            <span style="display:block;font-size:0.72rem;color:var(--text-dim);margin-top:2px">{{ c.device_type }}{% if c.description %} · {{ c.description }}{% endif %}</span>
+          </span>
+        </label>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Step 2: Pick devices -->
+    <div style="margin-bottom:16px">
+      <h4 style="color:var(--text-muted);margin-bottom:6px">2. 选择目标设备</h4>
+      <label style="cursor:pointer"><input type="checkbox" id="multi-dev-all" onclick="toggleAll('multi-dev')"> 全选</label>
+      <div class="device-select-grid" style="margin-top:6px">
+        {% for d in devices %}
+        <label class="device-checkbox-label">
+          <input type="checkbox" name="device_ids" value="{{ d.id }}" class="multi-dev" style="margin-right:10px">
+          <span>
+            <strong style="font-family:var(--font-mono)">{{ d.ip }}</strong>
+            <span style="color:var(--text-muted);font-size:0.8rem;margin-left:6px">{{ d.hostname or '' }}</span>
+            <span style="display:block;font-size:0.72rem;color:var(--text-dim);margin-top:2px">
+              {{ d.device_type }}
+              {% if d.status == 'connected' %}<span class="status-badge connected" style="margin-left:4px;font-size:0.7rem">在线</span>{% endif %}
+            </span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-success btn-lg">执行 (选中命令 × 选中设备)</button>
+    <span style="color:var(--text-dim);font-size:0.78rem;margin-left:8px">每台设备独立保存到巡检报告</span>
+  </form>
+</div>
+
+<!-- ========== Single Device Batch (existing) ========== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>单设备批量执行</h3>
+  <form method="post" action="/custom-commands/execute-batch" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <select name="device_id" required style="min-width:260px;font-family:var(--font-mono)">
+      <option value="">选择设备</option>
+      {% for d in devices %}
+      <option value="{{ d.id }}">{{ d.ip }} — {{ d.hostname or 'N/A' }} ({{ d.device_type }})</option>
+      {% endfor %}
+    </select>
+    <select name="cmd_ids" multiple required style="min-width:260px;font-family:var(--font-mono);height:100px">
+      {% for c in cmds %}
+      {% if c.enabled %}
+      <option value="{{ c.id }}">{{ c.command }} ({{ c.device_type }})</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-success">执行</button>
+  </form>
+</div>
+
+<!-- ========== Single Execute ========== -->
+<div class="card" style="margin-bottom:16px">
+  <h3>单命令快速执行</h3>
+  <form method="post" action="/custom-commands/execute" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <select name="cmd_id" required>
+      <option value="">选择命令</option>
+      {% for c in cmds %}
+      {% if c.enabled %}
+      <option value="{{ c.id }}">{{ c.command }} ({{ c.device_type }})</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+    <select name="device_id" required>
+      <option value="">选择设备</option>
+      {% for d in devices %}
+      <option value="{{ d.id }}">{{ d.ip }} ({{ d.hostname or d.device_type }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-success">执行</button>
+  </form>
+</div>
+
+<!-- ========== Command List ========== -->
+<div class="card">
+  <h3>命令列表 ({{ cmds|length }})</h3>
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>平台</th><th>命令</th><th>描述</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for c in cmds %}
+    <tr>
+      <td>{{ c.device_type }}</td>
+      <td style="font-family:var(--font-mono)">{{ c.command }}</td>
+      <td style="color:var(--text-muted)">{{ c.description }}</td>
+      <td>{% if c.enabled %}<span class="status-badge connected">启用</span>{% else %}<span class="status-badge unknown">禁用</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/custom-commands/toggle/{{ c.id }}" style="display:inline">
+          <button type="submit" class="btn btn-sm btn-ghost">{% if c.enabled %}禁用{% else %}启用{% endif %}</button>
+        </form>
+        <form method="post" action="/custom-commands/delete/{{ c.id }}" style="display:inline" onsubmit="return confirm('确定删除？')">
+          <button type="submit" class="btn btn-sm btn-danger">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<script>
+function toggleAll(cls) {
+  var checked = document.getElementById('multi-' + cls + '-all').checked;
+  document.querySelectorAll('.' + cls).forEach(function(cb) { cb.checked = checked; });
+}
+</script>
+
+{% endblock %}

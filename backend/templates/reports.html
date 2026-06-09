@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}巡检报告 - ivan网络巡检运维平台<script>
+async function deleteReport(id) {
+  if (!confirm("确定删除此巡检报告？此操作不可撤销。")) return;
+  var resp = await fetch("/reports/api/" + id, {method: "DELETE"});
+  if (resp.ok) { location.reload(); } else { alert("删除失败"); }
+}
+</script>
+
+{% endblock %}
+{% block content %}
+
+<h1>巡检报告</h1>
+
+<div style="margin-bottom:15px;display:flex;gap:8px">
+  <a href="/reports/export/csv" class="btn btn-primary">导出 CSV</a>
+  <button onclick="triggerInspect()" class="btn btn-success">执行新巡检</button>
+</div>
+
+<div class="card">
+  <h3>巡检历史</h3>
+  <div class="table-wrapper">
+  <table>
+    <thead><tr><th>ID</th><th>时间</th><th>IP</th><th>主机名</th><th>CPU</th><th>内存</th><th>运行时间</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+    <tr class="{{ 'row-err' if r.status != 'connected' else '' }}">
+      <td style="font-family:var(--font-mono)">#{{ r.id }}</td>
+      <td style="font-size:0.82rem;color:var(--text-muted)">{{ r.timestamp }}</td>
+      <td style="font-family:var(--font-mono)">{{ r.device.ip if r.device else '?' }}</td>
+      <td>{{ r.hostname }}</td>
+      <td style="font-family:var(--font-mono)">{{ r.cpu }}</td>
+      <td style="font-family:var(--font-mono)">{{ r.memory }}</td>
+      <td style="font-size:0.82rem;color:var(--text-muted)">{{ r.uptime }}</td>
+      <td>
+        {% if r.status == 'connected' %}<span class="status-badge connected">成功</span>
+        {% elif r.status == 'error' %}<span class="status-badge error">异常</span>
+        {% elif r.status == 'timeout' %}<span class="status-badge error">超时</span>
+        {% elif r.status == 'auth_failed' %}<span class="status-badge error">认证失败</span>
+        {% else %}<span class="status-badge unknown">{{ r.status }}</span>{% endif %}
+      </td>
+      <td>
+        <a href="/reports/{{ r.id }}" class="btn btn-sm btn-primary">查看</a>
+        <a href="/reports/{{ r.id }}/export" class="btn btn-sm btn-ghost">导出</a>
+        <button onclick="deleteReport({{ r.id }})" class="btn btn-sm btn-danger">删除</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<script>
+async function deleteReport(id) {
+  if (!confirm("确定删除此巡检报告？此操作不可撤销。")) return;
+  var resp = await fetch("/reports/api/" + id, {method: "DELETE"});
+  if (resp.ok) { location.reload(); } else { alert("删除失败"); }
+}
+</script>
+
+{% endblock %}
