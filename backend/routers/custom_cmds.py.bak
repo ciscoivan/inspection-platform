@@ -1,0 +1,113 @@
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import APIRouter, Depends, Request, Form
+from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import CustomCommand, Device
+from ..templating import templates
+
+router = APIRouter(prefix="/custom-commands", tags=["custom-commands"])
+
+# 所有支持的 platform 类型
+PLATFORM_TYPES = [
+    ("all", "所有平台"),
+    ("cisco_ios", "Cisco IOS/IOS-XE"),
+    ("cisco_xr", "Cisco IOS-XR"),
+    ("cisco_nxos", "Cisco NX-OS"),
+    ("juniper", "Juniper JunOS"),
+    ("huawei", "Huawei VRP"),
+    ("hp_comware", "H3C Comware"),
+    ("fortinet", "Fortinet FortiOS"),
+    ("arista_eos", "Arista EOS"),
+    ("ruijie_os", "Ruijie RGOS"),
+]
+
+
+def get_custom_commands(device_type: str, db: Session) -> dict[str, str]:
+    """获取某平台的自定义命令, 返回 {命令: 描述}。"""
+    cmds = (
+        db.query(CustomCommand)
+        .filter(
+            (CustomCommand.device_type == device_type) | (CustomCommand.device_type == "all"),
+            CustomCommand.enabled == True,
+        )
+        .all()
+    )
+    return {c.command: c.description or c.command for c in cmds}
+
+
+@router.get("")
+def list_page(request: Request, db: Session = Depends(get_db)):
+    cmds = db.query(CustomCommand).order_by(CustomCommand.device_type, CustomCommand.id).all()
+    devices = db.query(Device).order_by(Device.ip).all()
+    return templates.TemplateResponse(request,  + name + , {"cmds": cmds, "platforms": PLATFORM_TYPES, "devices": devices}))
+
+
+@router.post("/execute")
+def execute_command(
+    request: Request,
+    cmd_id: int = Form(...),
+    device_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """在指定设备上执行单条自定义命令。"""
+    cmd = db.query(CustomCommand).filter(CustomCommand.id == cmd_id).first()
+    dev = db.query(Device).filter(Device.id == device_id).first()
+    if not cmd or not dev:
+        return RedirectResponse("/custom-commands", status_code=303)
+
+    conn = None
+    try:
+        from netmiko import ConnectHandler
+        conn = ConnectHandler(
+            device_type=dev.device_type, host=dev.ip,
+            username=dev.username, password=dev.password, port=dev.port,
+            conn_timeout=10, auth_timeout=10, banner_timeout=10,
+        )
+        output = conn.send_command_timing(cmd.command, read_timeout=30, delay_factor=2)
+        result = {"ip": dev.ip, "hostname": dev.hostname or dev.ip, "success": True, "output": output}
+    except Exception as e:
+        result = {"ip": dev.ip, "hostname": dev.hostname or dev.ip, "success": False, "output": str(e)}
+    finally:
+        if conn:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+
+    cmds = db.query(CustomCommand).order_by(CustomCommand.device_type, CustomCommand.id).all()
+    devices = db.query(Device).order_by(Device.ip).all()
+    return templates.TemplateResponse(request,  + name + , {"cmds": cmds, "platforms": PLATFORM_TYPES,
+        "devices": devices, "exec_result": result, "exec_cmd": cmd.command}))
+
+
+@router.post("/add")
+def add_command(
+    request: Request,
+    device_type: str = Form(...),
+    command: str = Form(...),
+    description: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    c = CustomCommand(device_type=device_type, command=command, description=description)
+    db.add(c)
+    db.commit()
+    return RedirectResponse("/custom-commands", status_code=303)
+
+
+@router.post("/delete/{cmd_id}")
+def delete_command(cmd_id: int, db: Session = Depends(get_db)):
+    c = db.query(CustomCommand).filter(CustomCommand.id == cmd_id).first()
+    if c:
+        db.delete(c)
+        db.commit()
+    return RedirectResponse("/custom-commands", status_code=303)
+
+
+@router.post("/toggle/{cmd_id}")
+def toggle_command(cmd_id: int, db: Session = Depends(get_db)):
+    c = db.query(CustomCommand).filter(CustomCommand.id == cmd_id).first()
+    if c:
+        c.enabled = not c.enabled
+        db.commit()
+    return RedirectResponse("/custom-commands", status_code=303)

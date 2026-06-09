@@ -1,0 +1,133 @@
+import csv
+import io
+import json
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import StreamingResponse, HTMLResponse
+from sqlalchemy.orm import Session, joinedload
+from ..database import get_db
+from ..models import InspectionRun
+from ..templating import templates
+
+router = APIRouter(prefix="/reports", tags=["reports"])
+
+# ---- 静态路由 (必须在 /{run_id} 之前) ----
+
+@router.get("/api")
+def list_runs(device_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(InspectionRun).order_by(InspectionRun.timestamp.desc())
+    if device_id:
+        q = q.filter(InspectionRun.device_id == device_id)
+    return q.limit(100).all()
+
+
+@router.get("")
+def reports_page(request: Request, db: Session = Depends(get_db)):
+    runs = (
+        db.query(InspectionRun)
+        .options(joinedload(InspectionRun.device))
+        .order_by(InspectionRun.timestamp.desc())
+        .limit(50)
+        .all()
+    )
+    return templates.TemplateResponse(request,  + name + , {"runs": runs}))
+
+
+@router.get("/export/csv")
+def export_reports_csv(device_id: int | None = None, db: Session = Depends(get_db)):
+    """导出巡检记录为 CSV 文件下载。"""
+    q = db.query(InspectionRun).order_by(InspectionRun.timestamp.desc())
+    if device_id:
+        q = q.filter(InspectionRun.device_id == device_id)
+    runs = q.limit(500).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "时间", "设备IP", "主机名", "CPU", "内存", "运行时间", "状态", "错误"])
+    for r in runs:
+        writer.writerow([
+            r.id, r.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            r.device.ip if r.device else "?", r.hostname,
+            r.cpu, r.memory, r.uptime, r.status, r.error or ""
+        ])
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=inspection_reports.csv"}
+    )
+
+
+@router.delete("/api/{run_id}")
+def delete_run(run_id: int, db: Session = Depends(get_db)):
+    run = db.query(InspectionRun).filter(InspectionRun.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "记录不存在")
+    db.delete(run)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- 动态路由 ----
+
+@router.get("/{run_id}")
+def report_detail(run_id: int, request: Request, db: Session = Depends(get_db)):
+    run = db.query(InspectionRun).filter(InspectionRun.id == run_id).first()
+    if not run:
+        return templates.TemplateResponse(request,  + name + ))
+    raw = json.loads(run.raw_data) if run.raw_data else {}
+    return templates.TemplateResponse(request,  + name + , {"run": run, "sections": raw}))
+
+
+@router.get("/{run_id}/export")
+def export_report_html(run_id: int, db: Session = Depends(get_db)):
+    """导出单次巡检报告为 HTML 文件下载。"""
+    run = db.query(InspectionRun).filter(InspectionRun.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "记录不存在")
+    raw = json.loads(run.raw_data) if run.raw_data else {}
+
+    device_ip = run.device.ip if run.device else "?"
+    sections_html = ""
+    for cat, cmds in raw.items():
+        sections_html += f'<details open><summary style="font-weight:bold;padding:8px;background:#e6f7ff;margin:5px 0;cursor:pointer">{cat}</summary>'
+        for desc, output in cmds.items():
+            escaped = output.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            sections_html += f'<p style="color:#888;font-size:12px">{desc}</p><pre style="background:#1e1e1e;color:#d4d4d4;padding:10px;overflow-x:auto;max-height:400px;white-space:pre-wrap">{escaped}</pre>'
+        sections_html += '</details>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>巡检报告 - {run.hostname}</title>
+<style>
+ body{{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#f0f2f5;padding:20px}}
+ h1{{color:#1a1a2e}}.cards{{display:flex;gap:15px;margin:15px 0}}
+ .card{{background:#fff;border-radius:8px;padding:15px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.1);flex:1}}
+ .card .v{{font-size:28px;font-weight:bold;color:#1a1a2e}}.card .l{{color:#888;font-size:13px}}
+ pre{{font-size:12px;line-height:1.5}}
+</style></head><body>
+<h1>巡检报告 #{run.id}</h1>
+<p>{run.timestamp.strftime('%Y-%m-%d %H:%M:%S')} | {device_ip} | {run.hostname}</p>
+<div class="cards">
+<div class="card"><div class="v">{run.cpu}</div><div class="l">CPU</div></div>
+<div class="card"><div class="v">{run.memory}</div><div class="l">内存</div></div>
+<div class="card"><div class="v" style="font-size:16px">{run.uptime}</div><div class="l">运行时间</div></div>
+<div class="card"><div class="v" style="font-size:16px">{run.status}</div><div class="l">状态</div></div>
+</div>
+{sections_html}
+</body></html>"""
+
+    return HTMLResponse(
+        content=html,
+        headers={"Content-Disposition": f"attachment; filename=inspection_report_{run_id}_{run.hostname}.html"}
+    )
+
+
+@router.get("/compare")
+def compare_reports(
+    request: Request,
+    r1: int = Query(...),
+    r2: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    run1 = db.query(InspectionRun).filter(InspectionRun.id == r1).first()
+    run2 = db.query(InspectionRun).filter(InspectionRun.id == r2).first()
+    return templates.TemplateResponse(request,  + name + , {"run1": run1, "run2": run2}))

@@ -1,0 +1,210 @@
+import ipaddress
+import re
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import APIRouter, Request, Form
+from ..templating import templates
+
+router = APIRouter(prefix="/ping", tags=["ping"])
+
+MAX_HOSTS = 100   # 单次最多 ping 100 个 IP
+MAX_WORKERS = 50  # 批量 Ping 最大并发线程
+PING_TIMEOUT = 1000  # 单包超时(ms), LAN 网络 1s 足够
+
+
+def expand_targets(text: str) -> list[str]:
+    """解析用户输入: IP / CIDR / 范围, 返回 IP 列表。"""
+    ips = set()
+    for part in re.split(r"[,\s\n]+", text.strip()):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            # CIDR: 192.168.1.0/24
+            if "/" in part:
+                net = ipaddress.ip_network(part, strict=False)
+                for ip in net.hosts():
+                    ips.add(str(ip))
+                    if len(ips) >= MAX_HOSTS:
+                        break
+            # 范围: 192.168.1.1-192.168.1.10
+            elif "-" in part:
+                a, b = part.split("-", 1)
+                start = ipaddress.IPv4Address(a.strip())
+                end = ipaddress.IPv4Address(b.strip())
+                current = int(start)
+                while current <= int(end) and len(ips) < MAX_HOSTS:
+                    ips.add(str(ipaddress.IPv4Address(current)))
+                    current += 1
+            else:
+                ipaddress.IPv4Address(part)  # 验证格式
+                ips.add(part)
+        except (ValueError, ipaddress.AddressValueError):
+            pass
+    return sorted(ips, key=lambda x: ipaddress.IPv4Address(x))
+
+
+def ping_one(ip: str) -> dict:
+    """Ping 单个 IP 4 次, 返回连通性 + 平均/最小/最大延迟(ms)。"""
+    is_win = sys.platform == "win32"
+    cmd = ["ping", "-n" if is_win else "-c", "4",
+           "-w" if is_win else "-W", str(PING_TIMEOUT), ip]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=6)
+        output = out.stdout + out.stderr
+    except Exception:
+        return {"ip": ip, "reachable": False, "latency_ms": None}
+
+    # 提取所有响应时间
+    if is_win:
+        times = [int(m) for m in re.findall(r"时间[=<]\s*(\d+)ms", output)]
+        if not times:
+            times = [int(m) for m in re.findall(r"time[=<]\s*(\d+)ms", output)]
+    else:
+        times = [float(m) for m in re.findall(r"time[=<]\s*(\d+\.?\d*)\s*ms", output)]
+
+    if times:
+        return {
+            "ip": ip, "reachable": True,
+            "avg_ms": f"{sum(times)/len(times):.1f}",
+            "min_ms": f"{min(times):.1f}",
+            "max_ms": f"{max(times):.1f}",
+            "sent": 4, "recv": len(times),
+        }
+    # 检查是否完全不通
+    loss_m = re.search(r"(\d+)% 丢失" if is_win else r"(\d+)% packet loss", output)
+    loss = int(loss_m.group(1)) if loss_m else 100
+    if loss < 100:
+        return {"ip": ip, "reachable": True, "avg_ms": "0", "min_ms": "0", "max_ms": "0", "sent": 4, "recv": 0}
+    return {"ip": ip, "reachable": False, "latency_ms": None}
+
+
+def ping_multi(ip: str, count: int = 10) -> list[dict]:
+    """连续 Ping N 次, 返回每次结果。"""
+    is_win = sys.platform == "win32"
+    cmd = ["ping", "-n" if is_win else "-c", str(count),
+           "-w" if is_win else "-W", str(PING_TIMEOUT), ip]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=count * 3 + 5)
+        output = out.stdout + out.stderr
+    except subprocess.TimeoutExpired:
+        return [{"seq": 1, "reachable": False, "latency_ms": None, "error": "超时"}]
+
+    results = []
+    for line in output.splitlines():
+        if is_win:
+            m = re.search(r"来自\s+\S+\s+的回复.*?时间[=<]\s*(\d+)ms", line)
+            if not m:
+                m = re.search(r"Reply from \S+.*?time[=<]\s*(\d+)ms", line)
+        else:
+            m = re.search(r"icmp_seq=(\d+).*?time[=<]\s*(\d+\.?\d*)\s*ms", line)
+        if m:
+            seq = len(results) + 1
+            latency = float(m.group(2 if not is_win else 1))
+            results.append({"seq": seq, "reachable": True, "latency_ms": latency})
+        elif "请求超时" in line or "Request timed out" in line:
+            results.append({"seq": len(results) + 1, "reachable": False, "latency_ms": None})
+
+    return results
+
+
+@router.get("")
+def ping_page(request: Request):
+    return templates.TemplateResponse(request, "ping.html", {})
+
+
+@router.post("")
+def ping_targets(
+    request: Request,
+    targets: str = Form(default=""),
+    trace_target: str = Form(default=""),
+    cont_target: str = Form(default=""),
+    cont_count: str = Form(default="4"),
+):
+    """批量 Ping / 路由追踪 / 连续 Ping (三合一表单)。"""
+    # 连续 Ping
+    if cont_target.strip():
+        try:
+            count = min(int(cont_count), 100)
+        except ValueError:
+            count = 10
+        results = ping_multi(cont_target.strip(), count)
+        reachable = [r for r in results if r["reachable"]]
+        latencies = [r["latency_ms"] for r in reachable]
+        return templates.TemplateResponse(request, "ping.html", {"cont_host": cont_target,
+            "cont_count": count,
+            "cont_results": results,
+            "cont_sent": len(results),
+            "cont_recv": len(reachable),
+            "cont_loss": f"{(1 - len(reachable)/max(len(results),1)) * 100:.0f})%",
+            "cont_min": f"{min(latencies):.1f}" if latencies else "-",
+            "cont_max": f"{max(latencies):.1f}" if latencies else "-",
+            "cont_avg": f"{sum(latencies)/len(latencies):.1f}" if latencies else "-",
+        })
+
+    # 路由追踪
+    if trace_target.strip():
+        return _do_traceroute(request, trace_target.strip())
+
+    # 批量 Ping
+    if not targets.strip():
+        return templates.TemplateResponse(request, "ping.html", {"error": "请输入 IP 地址或网段"})
+
+    ips = expand_targets(targets)
+    if len(ips) > MAX_HOSTS:
+        ips = ips[:MAX_HOSTS]
+
+    if not ips:
+        return templates.TemplateResponse(request, "ping.html", {"error": "未能解析任何有效 IP 地址"})
+
+    workers = min(MAX_WORKERS, len(ips))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(ping_one, ips))
+
+    reachable = [r for r in results if r["reachable"]]
+    unreachable = [r for r in results if not r["reachable"]]
+
+    return templates.TemplateResponse(request, "ping.html", {"results": results,
+        "total": len(results),
+        "reachable": len(reachable),
+        "unreachable": len(unreachable),
+        "targets": targets})
+
+
+def _do_traceroute(request: Request, host: str):
+    """执行路由追踪并返回结果。"""
+    is_win = sys.platform == "win32"
+    cmd = ["tracert" if is_win else "traceroute", "-d" if is_win else "-n",
+           "-w", str(PING_TIMEOUT), "-h", "20", host]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        output = out.stdout + out.stderr
+    except subprocess.TimeoutExpired:
+        output = "路由追踪超时 (60s)"
+
+    # 解析每一跳
+    hops = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Windows: " 1    <1 ms    <1 ms    <1 ms  192.168.1.1"
+        # Linux: " 1  192.168.1.1  0.123 ms  0.234 ms  0.345 ms"
+        m = re.search(r"^\s*(\d+)\s+", line)
+        if m:
+            hop_num = m.group(1)
+            # 提取 IP
+            ip_m = re.findall(r"(\d+\.\d+\.\d+\.\d+)", line)
+            # 提取时间
+            times = re.findall(r"([<\d]+\.?\d*)\s*ms", line)
+            ip = ip_m[-1] if ip_m else ("*" if "*" in line else "-")
+            hops.append({
+                "hop": hop_num,
+                "ip": ip,
+                "times": ", ".join(t + "ms" for t in times[:3]) if times else ("*" if "*" in line else "-"),
+            })
+
+    return templates.TemplateResponse(request, "ping.html", {"trace_host": host,
+        "trace_hops": hops,
+        "trace_raw": output})

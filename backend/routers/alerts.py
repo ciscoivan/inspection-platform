@@ -1,0 +1,37 @@
+from fastapi import APIRouter, Depends, HTTPException, Request, Form
+from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import AlertRule, Device
+from ..templating import templates
+from ..routers.auth import require_auth
+
+router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+
+@router.get("")
+def alerts_page(request: Request, db: Session = Depends(get_db)):
+    rules = db.query(AlertRule).all()
+    devices = db.query(Device).all()
+    return templates.TemplateResponse(request, "alerts.html", {"rules": rules, "devices": devices})
+
+
+@router.post("/add")
+def create_alert_form(current_user=Depends(require_auth),
+    metric: str = Form(...),
+    operator: str = Form(">"),
+    threshold: float = Form(...),
+    device_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    rule = AlertRule(metric=metric, operator=operator, threshold=threshold, device_id=device_id)
+    db.add(rule)
+    db.commit()
+    return RedirectResponse("/alerts", status_code=303)
+
+
+@router.delete("/api/{rule_id}")
+def delete_alert(rule_id: int, db: Session = Depends(get_db), current_user=Depends(require_auth)):
+    db.query(AlertRule).filter(AlertRule.id == rule_id).delete()
+    db.commit()
+    return {"ok": True}
