@@ -721,6 +721,13 @@ pip install fastapi uvicorn sqlalchemy netmiko apscheduler cryptography jinja2 p
 - ⚠️ 生产环境建议:
   - 修改默认 admin 密码
   - 使用环境变量 `INSPECT_SECRET_KEY` 替代密钥文件
-  - 配置 HTTPS 反向代理 (Nginx/Caddy)
+  - 配置 HTTPS 反向代理 (Nginx/Caddy)<img width="598" height="656" alt="image" src="https://github.com/user-attachments/assets/9eba385f-8272-4363-b6f8-bbd978bf5905" />
+
   - 定期备份 `inspection.db` 和 `.encryption_key`
   - 为设备账号使用只读权限 (最小权限原则)
+ 
+-----------
+ 打赏
+如果您觉得工具好用的话，可以请我喝杯咖啡的。
+![Uploading image.png…]()
+
