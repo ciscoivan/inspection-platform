@@ -1330,3 +1330,13 @@ git add -A && git commit -m "chore: cleanup backup files and update docs"
 | **文档** | README 新增技术方案对比、运行状态、已知问题与改进方向 |
 | **代码审查** | 识别 H3C_COMMANDS 重复定义、WAL 膨胀、.bak 文件清理等改进点 |
 | **解析器** | Cisco IOS CPU 3 层回退, Juniper CPU 4 层回退 |
+
+
+-----如果您支持我可以请问喝一杯咖啡--------------
+<img width="628" height="701" alt="image" src="https://github.com/user-attachments/assets/503b3532-8109-4bd2-945d-061272a2a5f6" />
+
+<img width="571" height="643" alt="image" src="https://github.com/user-attachments/assets/a05c8081-2e49-4e58-8aba-d100daa1066d" />
+
+
+
+
