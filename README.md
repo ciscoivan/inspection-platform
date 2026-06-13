@@ -36,8 +36,11 @@
 │  auth    │ devices  │ inspect  │  ping    │config_compare│config_push │ scheduler  │
 │  认证模块  │ 设备管理  │ 巡检引擎  │ 网络诊断  │  配置对比     │  配置推送   │ 定时巡检   │
 ├──────────┼──────────┼──────────┼──────────┼─────────────┼─────────────┼─────────────┤
-│  alerts  │ reports  │ subnet   │custom_cmd│  crypto      │  topology  │            │
-│  告警系统  │ 报告导出  │ 子网计算  │ 自定义命令 │  密码加密     │  网络拓扑   │            │
+│  alerts  │ reports  │ subnet   │custom_cmd│  crypto      │  topology  │  helpers   │
+│  告警系统  │ 报告导出  │ 子网计算  │ 自定义命令 │  密码加密     │  网络拓扑   │  共享工具   │
+├──────────┼──────────┼──────────┼──────────┼─────────────┼─────────────┼─────────────┤
+│ constants │          │          │          │             │            │            │
+│  共享常量  │          │          │          │             │            │            │
 ├──────────┴──────────┴──────────┴──────────┴─────────────┴─────────────┴─────────────┤
 │              SQLAlchemy ORM + SQLite                     │
 ├─────────────────────────────────────────────────────────┤
@@ -542,6 +545,8 @@
 │       ├── models.py               # ORM 模型 (Device/User/InspectionRun/AlertRule/AlertHistory/CustomCommand/InspectionSchedule)
 │       ├── schemas.py              # Pydantic 请求/响应模型
 │       ├── crypto.py               # 密码加密/解密工具 (Fernet AES-128-CBC + HMAC)
+│       ├── constants.py            # 共享常量 (SERVER_PLATFORMS)
+│       ├── helpers.py              # 共享辅助函数 (save_inspection_run)
 │       ├── templating.py           # Jinja2 模板引擎实例
 │       ├── engine/
 │       │   └── inspector.py        # 巡检引擎封装 (调用 inspection.py)
@@ -883,6 +888,7 @@ configs/ 目录: 100+ 个 .cfg 备份文件
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `INSPECT_SECRET_KEY` | Fernet 加密密钥 (Base64 编码) | 自动生成到 `.encryption_key` 文件 |
+| `INSPECT_DB_PATH` | SQLite 数据库文件路径 | `/home/ivan/network-inspection/inspection.db` |
 
 ### 加密密钥
 
@@ -897,7 +903,7 @@ configs/ 目录: 100+ 个 .cfg 备份文件
 ### 数据库
 
 - 类型: SQLite (WAL 模式)
-- 位置: `/home/ivan/network-inspection/inspection.db`
+- 位置: 默认 `/home/ivan/network-inspection/inspection.db`，可通过 `INSPECT_DB_PATH` 环境变量覆盖
 - 表: `users`, `devices`, `inspection_runs`, `alert_rules`, `alert_history`, `inspection_schedules`, `custom_commands`
 - 表结构首次启动自动创建 (SQLAlchemy `Base.metadata.create_all`)
 - 明文密码首次启动自动迁移为加密存储
@@ -1287,7 +1293,7 @@ git add -A && git commit -m "chore: cleanup backup files and update docs"
 - ✅ 日志系统敏感字段脱敏: password/secret/token/key 自动替换为 `***MASKED***`
 - ✅ 支持明文密码自动迁移: 启动时检测并加密旧密码
 - ✅ 加密密钥文件权限 600
-- ✅ 旧格式 SHA256 密码自动兼容 (登录时检测并升级)
+- ✅ 旧格式 SHA256 密码自动兼容 — 登录时检测并自动升级为 PBKDF2-SHA256
 
 ### 数据保护
 - ✅ SQLite WAL 模式: 读写并发安全
@@ -1307,6 +1313,10 @@ git add -A && git commit -m "chore: cleanup backup files and update docs"
 
 | 模块 | 优化内容 |
 |------|----------|
+| **前端交互** | HTMX 渐进增强 — 仪表盘 /api/dashboard/stats 轻量端点 (30s 刷新)、告警/报告行内操作、去除 deleteOne 死代码 |
+| **IOS-XR 巡检** | 命令矩阵 6→8 类别 (新增系统冗余/环境状态/告警与日志), 12→21 命令, 告警自动回退, 日志大小写过滤 |
+| **代码质量** | 提取 SERVER_PLATFORMS→constants.py, save_inspection_run→helpers.py, topology N+1 修复, H3C_COMMANDS 去重 |
+| **安全加固** | PBKDF2 自动升级旧哈希, devices.csv 安全警告, config_push 预配置备份持久化, INSPECT_DB_PATH 环境变量 |
 | **巡检引擎** | 路由表验证与自动回退 (9厂商), 华为 USG 防火墙兼容, Juniper/NX-OS 环境监控, Arista 路由回退, Ruijie 增强 |
 | **服务器 BMC** | 5 大 BMC 独立系统日志类别 (Dell getsel, HP iML, Lenovo eventlog, Huawei sel, Inspur sel) |
 | **数据库** | SQLite WAL 模式, 连接池 (pool_pre_ping/pool_recycle), Context Manager |
