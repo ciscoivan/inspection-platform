@@ -991,6 +991,18 @@ chmod 666 inspection.db
 
 # 3. 启动容器 (端口 8001)
 docker run -d --name network-inspection --restart unless-stopped   -p 8001:8000   -v ./configs:/app/configs   -v ./reports:/app/reports   -v ./logs:/app/logs   network-inspection:latest
+or
+docker run -d \
+  --name network-inspection \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -e INSPECT_DB_PATH=/app/inspection.db \
+  -e PYTHONUNBUFFERED=1 \
+  -v $(pwd)/configs:/app/configs \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/reports:/app/reports \
+  -v $(pwd)/inspection.db:/app/inspection.db \
+  ivanliyang/network1-inspection:latest
 
 # 4. 验证
 curl http://localhost:8001/dashboard
