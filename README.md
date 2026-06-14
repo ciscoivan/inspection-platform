@@ -957,12 +957,19 @@ configs/ 目录: 100+ 个 .cfg 备份文件
 | 暴露端口 | `8000` (Web 平台) |
 | 工作目录 | `/app/inspection-platform` |
 | 运行用户 | `inspect` (非 root) |
+### 从docker-hub仓库拉取（推荐）
+```bash
+# 公开镜像，无需登录即可拉取
 
+docker pull ivanliyang/network1-inspection:latest
+
+```
 ### 从阿里云镜像仓库拉取（推荐）
 
 ```bash
 # 公开镜像，无需登录即可拉取
 docker pull crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:latest
+docker pull ivanliyang/network1-inspection:latest
 
 # 打本地标签（可选）
 docker tag crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:latest   network-inspection:latest
@@ -975,9 +982,12 @@ docker tag crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwro
 docker load -i network-inspection.tar
 # 或者直接拉取（如果已推送至仓库）
 docker pull crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:latest
+docker pull https://hub.docker.com/r/ivanliyang/network1-inspection
 
 # 2. 创建数据目录
 mkdir -p configs reports logs
+touch inspection.db
+chmod 666 inspection.db
 
 # 3. 启动容器 (端口 8001)
 docker run -d --name network-inspection --restart unless-stopped   -p 8001:8000   -v ./configs:/app/configs   -v ./reports:/app/reports   -v ./logs:/app/logs   network-inspection:latest
@@ -1003,10 +1013,13 @@ services:
       - "8001:8000"
     environment:
       - INSPECT_SECRET_KEY=${INSPECT_SECRET_KEY:-}
+      - INSPECT_DB_PATH=/app/inspection.db
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./configs:/app/configs
       - ./reports:/app/reports
       - ./logs:/app/logs
+      - ./inspection.db:/app/inspection.db
 ```
 
 ```bash
