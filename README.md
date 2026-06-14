@@ -969,6 +969,7 @@ docker pull ivanliyang/network1-inspection:latest
 ```bash
 # 公开镜像，无需登录即可拉取
 docker pull crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:latest
+docker pull crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:v2
 docker pull ivanliyang/network1-inspection:latest
 
 # 打本地标签（可选）
@@ -1016,6 +1017,7 @@ curl http://localhost:8001/dashboard
 #   image: network-inspection:latest
 # 使用阿里云仓库镜像:
 #   image: crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:latest
+#   image: crpi-onapv500ctq06zb5.cn-hangzhou.personal.cr.aliyuncs.com/ivannetwrok/networkauto:v2
 services:
   inspection:
     image: network-inspection:latest
