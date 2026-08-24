@@ -1,3 +1,5 @@
+<img width="200" height="200" alt="ivan-logo-mini" src="https://github.com/user-attachments/assets/8514f584-9f3f-49ca-8920-9c84cdcb4ac0" />
+
 # Network Automation Inspection Platform
 
 A Python FastAPI-based automated inspection and operations platform for network devices and servers, supporting SSH information collection across 9 major network vendors + 5 major server BMC platforms, configuration backup, batch Ping/Traceroute, configuration comparison, configuration push, scheduled inspection scheduling, an alert system (escalation/silencing/acknowledgment/history), custom command execution, report export (PDF/Word/CSV/HTML), and other operations features. Cross-platform support for Linux / Windows. Supports Chinese/English UI switching.
