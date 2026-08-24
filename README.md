@@ -1,4 +1,5 @@
 <img width="200" height="200" alt="ivan-logo-mini" src="https://github.com/user-attachments/assets/8514f584-9f3f-49ca-8920-9c84cdcb4ac0" />
+
 # 网络自动化巡检平台 (Network Inspection Platform)
 
 基于 Python FastAPI 的网络设备与服务器自动化巡检运维平台，支持 9 大网络厂商 + 5 大服务器 BMC 平台的 SSH 信息采集、配置备份、批量 Ping/Traceroute、配置对比、配置推送、定时巡检调度、告警系统（升级/静默/确认/历史）、自定义命令执行、报告导出（PDF/Word/CSV/HTML）等运维功能。跨平台支持 Linux / Windows。支持中英文界面切换。
